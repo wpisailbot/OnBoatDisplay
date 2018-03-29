@@ -106,10 +106,11 @@ int main(void)
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
-	//MX_CAN_Init();
+	MX_CAN_Init();
 	MX_ADC1_Init();
 	MX_USART1_UART_Init();
 	MX_SPI1_Init();
+	MX_ADC2_Init();
 	/* USER CODE BEGIN 2 */
 
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
@@ -119,36 +120,36 @@ int main(void)
 	__HAL_CAN_CLEAR_FLAG(&CanHandle, CAN_FLAG_WKU);
 
 
-		/* you have to edit the startup_stm32fxxx.s file and set a big enough heap size */
-		unsigned char* frame_buffer_black = (unsigned char*)malloc(EPD_WIDTH * EPD_HEIGHT / 8);
-		unsigned char* frame_buffer_red = (unsigned char*)malloc(EPD_WIDTH * EPD_HEIGHT / 8);
-		EPD epd;
-		if (EPD_Init(&epd) != 0) {
-		    //printf("e-Paper init failed\n");
-		    return -1;
-		}
-
-		Paint paint_black;
-		Paint paint_red;
-		Paint_Init(&paint_black, frame_buffer_black, epd.width, epd.height);
-		Paint_Init(&paint_red, frame_buffer_red, epd.width, epd.height);
-		Paint_Clear(&paint_black, UNCOLORED);
-		Paint_Clear(&paint_red, UNCOLORED);
-
-		/* Draw something to the frame buffer */
-		/* For simplicity, the arguments are explicit numerical coordinates */
-		Paint_SetRotate(&paint_black, ROTATE_90);
-
-		/*Write strings to the buffer */
-		Paint_DrawStringAt(&paint_black, 36, 30, "Boat booting", &Font24, COLORED);
-		Paint_DrawStringAt(&paint_black, 50, 64, "Please wait", &Font24, COLORED);
-
-		/* Display the frame_buffer */
-		EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
-		HAL_Delay(5000);
-		Paint_Clear(&paint_black, UNCOLORED);
-		Paint_DrawStringAt(&paint_black, 40, 30, "Boat booted", &Font24, COLORED);
-		EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+//	/* you have to edit the startup_stm32fxxx.s file and set a big enough heap size */
+//	unsigned char* frame_buffer_black = (unsigned char*)malloc(EPD_WIDTH * EPD_HEIGHT / 8);
+//	unsigned char* frame_buffer_red = (unsigned char*)malloc(EPD_WIDTH * EPD_HEIGHT / 8);
+//	EPD epd;
+//	if (EPD_Init(&epd) != 0) {
+//		//printf("e-Paper init failed\n");
+//		return -1;
+//	}
+//
+//	Paint paint_black;
+//	Paint paint_red;
+//	Paint_Init(&paint_black, frame_buffer_black, epd.width, epd.height);
+//	Paint_Init(&paint_red, frame_buffer_red, epd.width, epd.height);
+//	Paint_Clear(&paint_black, UNCOLORED);
+//	Paint_Clear(&paint_red, UNCOLORED);
+//
+//	/* Draw something to the frame buffer */
+//	/* For simplicity, the arguments are explicit numerical coordinates */
+//	Paint_SetRotate(&paint_black, ROTATE_90);
+//
+//	/*Write strings to the buffer */
+//	Paint_DrawStringAt(&paint_black, 36, 30, "Boat booting", &Font24, COLORED);
+//	Paint_DrawStringAt(&paint_black, 50, 64, "Please wait", &Font24, COLORED);
+//
+//	/* Display the frame_buffer */
+//	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+//	HAL_Delay(5000);
+//	Paint_Clear(&paint_black, UNCOLORED);
+//	Paint_DrawStringAt(&paint_black, 40, 30, "Boat booted", &Font24, COLORED);
+//	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
 
 	CanHandle.pTxMsg->StdId = 123;
 	CanHandle.pTxMsg->RTR = 0;
@@ -156,25 +157,36 @@ int main(void)
 	CanHandle.pTxMsg->Data[0] = ubKeyNumber;
 	CanHandle.pTxMsg->Data[1] = 0xAD;
 
-
+	HAL_ADC_Start(&hadc2);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		if (HAL_CAN_Transmit(&CanHandle, 10) != HAL_OK)
-		{
-			/* Transmition Error */
-			Error_Handler();
-		}
-		else {
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-			HAL_Delay(1000);
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-			HAL_Delay(1000);
-		}
 
+//		if (HAL_ADC_PollForConversion(&hadc2, 1000) == HAL_OK)
+//		{
+//			int ADCValue = HAL_ADC_GetValue(&hadc2);
+//			CanHandle.pTxMsg->Data[0] = ADCValue>>8;
+//			CanHandle.pTxMsg->Data[1] = ADCValue;
+//		}
+
+		if (HAL_CAN_Receive(&CanHandle, CAN_FIFO0, 500) == HAL_OK) {
+			CanHandle.pTxMsg->Data[0] = CanHandle.pRxMsg->Data[0]+1;
+			CanHandle.pTxMsg->Data[1] = CanHandle.pRxMsg->Data[1]-1;
+			HAL_Delay(1000);
+			if (HAL_CAN_Transmit(&CanHandle, 10) != HAL_OK)
+			{
+				/* Transmition Error */
+				Error_Handler();
+			} else {
+				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+				HAL_Delay(1000);
+				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+				HAL_Delay(1000);
+			}
+		}
 
 		/* USER CODE END WHILE */
 
@@ -294,27 +306,6 @@ static void CAN_Config(void)
 	if (HAL_CAN_ConfigFilter(&CanHandle, &sFilterConfig) != HAL_OK)
 	{
 		/* Filter configuration Error */
-		Error_Handler();
-	}
-}
-
-/**
- * @brief  Transmission  complete callback in non blocking mode
- * @param  CanHandle: pointer to a CAN_HandleTypeDef structure that contains
- *         the configuration information for the specified CAN.
- * @retval None
- */
-void HAL_CAN_RxCpltCallback(CAN_HandleTypeDef *CanHandle)
-{
-	if ((CanHandle->pRxMsg->StdId == 0x321) && (CanHandle->pRxMsg->IDE == CAN_ID_STD) && (CanHandle->pRxMsg->DLC == 2))
-	{
-		//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-	}
-
-	/* Receive */
-	if (HAL_CAN_Receive_IT(CanHandle, CAN_FIFO0) != HAL_OK)
-	{
-		/* Reception Error */
 		Error_Handler();
 	}
 }
