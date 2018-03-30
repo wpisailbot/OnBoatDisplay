@@ -120,73 +120,97 @@ int main(void)
 	__HAL_CAN_CLEAR_FLAG(&CanHandle, CAN_FLAG_WKU);
 
 
-//	/* you have to edit the startup_stm32fxxx.s file and set a big enough heap size */
-//	unsigned char* frame_buffer_black = (unsigned char*)malloc(EPD_WIDTH * EPD_HEIGHT / 8);
-//	unsigned char* frame_buffer_red = (unsigned char*)malloc(EPD_WIDTH * EPD_HEIGHT / 8);
-//	EPD epd;
-//	if (EPD_Init(&epd) != 0) {
-//		//printf("e-Paper init failed\n");
-//		return -1;
-//	}
-//
-//	Paint paint_black;
-//	Paint paint_red;
-//	Paint_Init(&paint_black, frame_buffer_black, epd.width, epd.height);
-//	Paint_Init(&paint_red, frame_buffer_red, epd.width, epd.height);
-//	Paint_Clear(&paint_black, UNCOLORED);
-//	Paint_Clear(&paint_red, UNCOLORED);
-//
-//	/* Draw something to the frame buffer */
-//	/* For simplicity, the arguments are explicit numerical coordinates */
-//	Paint_SetRotate(&paint_black, ROTATE_90);
-//
-//	/*Write strings to the buffer */
-//	Paint_DrawStringAt(&paint_black, 36, 30, "Boat booting", &Font24, COLORED);
-//	Paint_DrawStringAt(&paint_black, 50, 64, "Please wait", &Font24, COLORED);
-//
-//	/* Display the frame_buffer */
-//	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
-//	HAL_Delay(5000);
-//	Paint_Clear(&paint_black, UNCOLORED);
-//	Paint_DrawStringAt(&paint_black, 40, 30, "Boat booted", &Font24, COLORED);
-//	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+	/* you have to edit the startup_stm32fxxx.s file and set a big enough heap size */
+	unsigned char* frame_buffer_black = (unsigned char*)malloc(EPD_WIDTH * EPD_HEIGHT / 8);
+	unsigned char* frame_buffer_red = (unsigned char*)malloc(EPD_WIDTH * EPD_HEIGHT / 8);
+	EPD epd;
+	if (EPD_Init(&epd) != 0) {
+		//printf("e-Paper init failed\n");
+		return -1;
+	}
 
-	CanHandle.pTxMsg->StdId = 123;
+	Paint paint_black;
+	Paint paint_red;
+	Paint_Init(&paint_black, frame_buffer_black, epd.width, epd.height);
+	Paint_Init(&paint_red, frame_buffer_red, epd.width, epd.height);
+	Paint_Clear(&paint_black, UNCOLORED);
+	Paint_Clear(&paint_red, UNCOLORED);
+
+	/* Draw something to the frame buffer */
+	/* For simplicity, the arguments are explicit numerical coordinates */
+	Paint_SetRotate(&paint_black, ROTATE_90);
+
+	/*Write strings to the buffer */
+	Paint_DrawStringAt(&paint_black, 36, 30, "Boat booting", &Font24, COLORED);
+	Paint_DrawStringAt(&paint_black, 50, 64, "Please wait", &Font24, COLORED);
+
+	/* Display the frame_buffer */
+	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+
+
+
+
+	HAL_Delay(5000); // Will replace with wait for rx of specific CAN message or some other signal from BBB
+
+
+
+
+	Paint_Clear(&paint_black, UNCOLORED);
+	Paint_DrawStringAt(&paint_black, 40, 30, "Boat booted", &Font24, COLORED);
+	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+
+	CanHandle.pTxMsg->StdId = 0x123;
 	CanHandle.pTxMsg->RTR = 0;
-	CanHandle.pTxMsg->DLC = 2;
-	CanHandle.pTxMsg->Data[0] = ubKeyNumber;
-	CanHandle.pTxMsg->Data[1] = 0xAD;
+	CanHandle.pTxMsg->DLC = 3;
+	CanHandle.pTxMsg->Data[0] = 0;
+	CanHandle.pTxMsg->Data[1] = 0;
+	CanHandle.pTxMsg->Data[2] = 0;
 
 	HAL_ADC_Start(&hadc2);
+
+	int idx = 0;
+	int ADCValue = 0;
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
-
-//		if (HAL_ADC_PollForConversion(&hadc2, 1000) == HAL_OK)
-//		{
-//			int ADCValue = HAL_ADC_GetValue(&hadc2);
-//			CanHandle.pTxMsg->Data[0] = ADCValue>>8;
-//			CanHandle.pTxMsg->Data[1] = ADCValue;
-//		}
-
-		if (HAL_CAN_Receive(&CanHandle, CAN_FIFO0, 500) == HAL_OK) {
-			CanHandle.pTxMsg->Data[0] = CanHandle.pRxMsg->Data[0]+1;
-			CanHandle.pTxMsg->Data[1] = CanHandle.pRxMsg->Data[1]-1;
-			HAL_Delay(1000);
-			if (HAL_CAN_Transmit(&CanHandle, 10) != HAL_OK)
-			{
-				/* Transmition Error */
-				Error_Handler();
-			} else {
-				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-				HAL_Delay(1000);
-				HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-				HAL_Delay(1000);
-			}
+		HAL_ADC_Start(&hadc2);
+		HAL_StatusTypeDef adcStatus = HAL_ADC_PollForConversion(&hadc2, 1000);
+		if (adcStatus == HAL_OK)
+		{
+			ADCValue = HAL_ADC_GetValue(&hadc2);
+			CanHandle.pTxMsg->Data[0] = ADCValue>>8;
+			CanHandle.pTxMsg->Data[1] = ADCValue;
+			CanHandle.pTxMsg->Data[2] = (int)adcStatus;
+			idx++;
+		} else {
+			CanHandle.pTxMsg->Data[0] = 0;
+			CanHandle.pTxMsg->Data[1] = 0;
+			CanHandle.pTxMsg->Data[2] = (int)adcStatus;
 		}
+
+		if (HAL_CAN_Transmit(&CanHandle, 10) != HAL_OK)
+		{
+			/* Transmition Error */
+			Error_Handler();
+		} else {
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+			HAL_Delay(100);
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+			HAL_Delay(100);
+		}
+
+		float voltage = (float)ADCValue/4096.0*13.1;
+
+		char voltageBuf[6];
+		sprintf(voltageBuf, "%d.%dv",  (int)voltage, (int)(voltage*10)%10);
+
+		Paint_Clear(&paint_black, UNCOLORED);
+		Paint_DrawStringAt(&paint_black, 40, 30, voltageBuf, &Font24, COLORED);
+		EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+		HAL_Delay(10000);
 
 		/* USER CODE END WHILE */
 
