@@ -229,18 +229,32 @@ int main(void)
 		}
 		/* Receive CAN messages */
 
-		/* Read ADC to read battery voltage, scale, and write to display buffer */
+		/*
+		 * Read ADC to read battery voltage, scale, and write to display buffer
+		 */
+
+		// Start the ADC
 		HAL_ADC_Start(&hadc2);
+
+		// Poll the ADC, and wait for the conversion to finish
 		if (HAL_ADC_PollForConversion(&hadc2, 100) == HAL_OK)
 		{
 			ADCValue = HAL_ADC_GetValue(&hadc2);
 
+			/* Construct the battery voltage method */
 			CanHandle.pTxMsg->ExtId = BatteryVoltage;
 			CanHandle.pTxMsg->DLC = 2;
 			CanHandle.pTxMsg->Data[0] = ADCValue>>8;
 			CanHandle.pTxMsg->Data[1] = ADCValue;
+
+			/* Transmit the battery voltage message. Doesn't really matter if it fails, not super
+			 * critical and there's no real recovery behavior
+			 */
+			HAL_CAN_Transmit(&CanHandle, 1000);
+
 		}
 
+		// Scale from ADC to actual voltage range based on voltage divider
 		float voltage = (float)ADCValue/4096.0*13.0;
 
 		char voltageBuf[6];
@@ -266,16 +280,16 @@ int main(void)
 		char WingConnBuf[8];
 		sprintf(WingConnBuf, "Wing: %d",  ConnectionStates.Wing);
 
-		char RadioConnBuf[11];
+		char RadioConnBuf[8];
 		sprintf(RadioConnBuf, "Radio: %d",  ConnectionStates.Radio);
 
-		char WifiConnBuf[9];
+		char WifiConnBuf[8];
 		sprintf(WifiConnBuf, "Wifi: %d",  ConnectionStates.Wifi);
 
 		char JetsonConnBuf[10];
 		sprintf(JetsonConnBuf, "Jetson: %d",  ConnectionStates.Jetson);
 
-		char UIConnBuf[10];
+		char UIConnBuf[6];
 		sprintf(UIConnBuf, "UI: %d",  ConnectionStates.UI);
 
 
