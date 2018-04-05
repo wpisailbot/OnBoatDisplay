@@ -51,6 +51,7 @@
 #include "epdpaint.h"
 #include "imagedata.h"
 #include <stdlib.h>
+#include "gompi.h"
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -59,6 +60,30 @@
 /* Private variables ---------------------------------------------------------*/
 #define COLORED      1
 #define UNCOLORED    0
+
+typedef enum { false, true } bool;
+
+enum {
+	SailbotState = 65296,
+	SailbotConn = 65297,
+	BatteryVoltage = 0x94ff2015
+};
+
+struct {
+	unsigned char Wing;
+	unsigned char Ballast;
+	unsigned char Winch;
+	unsigned char Rudder;
+	unsigned char Tacker;
+} SailbotStates;
+
+struct {
+	unsigned char Wing;
+	unsigned char Radio;
+	unsigned char Wifi;
+	unsigned char Jetson;
+	unsigned char UI;
+} ConnectionStates;
 
 uint8_t ubKeyNumber = 0x0;
 CAN_HandleTypeDef    CanHandle;
@@ -70,6 +95,7 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
 static void CAN_Config(void);
+void waitForCANMsg(int msgID);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -148,16 +174,12 @@ int main(void)
 	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
 
 
-
-
-	HAL_Delay(5000); // Will replace with wait for rx of specific CAN message or some other signal from BBB
-
-
-
+	waitForCANMsg(SailbotState);
+	//HAL_Delay(5000); // Will replace with wait for rx of specific CAN message or some other signal from BBB
 
 	Paint_Clear(&paint_black, UNCOLORED);
 	Paint_DrawStringAt(&paint_black, 40, 30, "Boat booted", &Font24, COLORED);
-	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+	EPD_DisplayFrame(&epd, frame_buffer_black, gImage_gompi);
 
 	CanHandle.pTxMsg->StdId = 0x123;
 	CanHandle.pTxMsg->RTR = 0;
@@ -168,47 +190,116 @@ int main(void)
 
 	HAL_ADC_Start(&hadc2);
 
-	int idx = 0;
 	int ADCValue = 0;
+	long startTime = 0;
+	int interval = 10000; // time between screen updates in sections
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1)
 	{
+
+		startTime = ticks;
+
+		/**
+		 *
+		 * While waiting to update display, continually read messages from the CAN bus.
+		 * If they are either of the two we care about, save the data from them for later display.
+		 * This way the latest data is always available when the display updates.
+		 * Maybe not the most efficient approach, but it works.
+		 *
+		 */
+		while (ticks < (startTime + interval)) {
+			if (HAL_CAN_Receive(&CanHandle, CAN_FIFO0, 500) == HAL_OK) {
+				if (CanHandle.pRxMsg->ExtId == SailbotState) {
+					SailbotStates.Wing = CanHandle.pRxMsg->Data[0];
+					SailbotStates.Ballast = CanHandle.pRxMsg->Data[1];
+					SailbotStates.Winch = CanHandle.pRxMsg->Data[2];
+					SailbotStates.Rudder = CanHandle.pRxMsg->Data[3];
+					SailbotStates.Tacker = CanHandle.pRxMsg->Data[4];
+				} else if (CanHandle.pRxMsg->ExtId == SailbotConn) {
+					ConnectionStates.Wing = CanHandle.pRxMsg->Data[0];
+					ConnectionStates.Radio = CanHandle.pRxMsg->Data[1];
+					ConnectionStates.Wifi = CanHandle.pRxMsg->Data[2];
+					ConnectionStates.Jetson = CanHandle.pRxMsg->Data[3];
+					ConnectionStates.UI = CanHandle.pRxMsg->Data[4];
+				}
+			}
+		}
+		/* Receive CAN messages */
+
+		/* Read ADC to read battery voltage, scale, and write to display buffer */
 		HAL_ADC_Start(&hadc2);
-		HAL_StatusTypeDef adcStatus = HAL_ADC_PollForConversion(&hadc2, 1000);
-		if (adcStatus == HAL_OK)
+		if (HAL_ADC_PollForConversion(&hadc2, 100) == HAL_OK)
 		{
 			ADCValue = HAL_ADC_GetValue(&hadc2);
+
+			CanHandle.pTxMsg->ExtId = BatteryVoltage;
+			CanHandle.pTxMsg->DLC = 2;
 			CanHandle.pTxMsg->Data[0] = ADCValue>>8;
 			CanHandle.pTxMsg->Data[1] = ADCValue;
-			CanHandle.pTxMsg->Data[2] = (int)adcStatus;
-			idx++;
-		} else {
-			CanHandle.pTxMsg->Data[0] = 0;
-			CanHandle.pTxMsg->Data[1] = 0;
-			CanHandle.pTxMsg->Data[2] = (int)adcStatus;
 		}
 
-		if (HAL_CAN_Transmit(&CanHandle, 10) != HAL_OK)
-		{
-			/* Transmition Error */
-			Error_Handler();
-		} else {
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-			HAL_Delay(100);
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-			HAL_Delay(100);
-		}
-
-		float voltage = (float)ADCValue/4096.0*13.1;
+		float voltage = (float)ADCValue/4096.0*13.0;
 
 		char voltageBuf[6];
 		sprintf(voltageBuf, "%d.%dv",  (int)voltage, (int)(voltage*10)%10);
 
+
+		/* Write states to the display */
+		char WingStateBuf[8];
+		sprintf(WingStateBuf, "Wing: %d",  SailbotStates.Wing);
+
+		char BallastStateBuf[11];
+		sprintf(BallastStateBuf, "Ballast: %d",  SailbotStates.Ballast);
+
+		char WinchStateBuf[9];
+		sprintf(WinchStateBuf, "Winch: %d",  SailbotStates.Winch);
+
+		char RudderStateBuf[10];
+		sprintf(RudderStateBuf, "Rudder: %d",  SailbotStates.Rudder);
+
+		char TackerStateBuf[10];
+		sprintf(TackerStateBuf, "Tacker: %d",  SailbotStates.Tacker);
+
+		char WingConnBuf[8];
+		sprintf(WingConnBuf, "Wing: %d",  ConnectionStates.Wing);
+
+		char RadioConnBuf[11];
+		sprintf(RadioConnBuf, "Radio: %d",  ConnectionStates.Radio);
+
+		char WifiConnBuf[9];
+		sprintf(WifiConnBuf, "Wifi: %d",  ConnectionStates.Wifi);
+
+		char JetsonConnBuf[10];
+		sprintf(JetsonConnBuf, "Jetson: %d",  ConnectionStates.Jetson);
+
+		char UIConnBuf[10];
+		sprintf(UIConnBuf, "UI: %d",  ConnectionStates.UI);
+
+
+		/* Write to the display */
 		Paint_Clear(&paint_black, UNCOLORED);
-		Paint_DrawStringAt(&paint_black, 40, 30, voltageBuf, &Font24, COLORED);
+
+		Paint_DrawStringAt(&paint_black, 10, 10, "Connections:", &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 28, WingConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 46, RadioConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 64, WifiConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 82, JetsonConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 100, UIConnBuf, &Font16, COLORED);
+
+
+
+		Paint_DrawStringAt(&paint_black, 100, 10, "Modes:", &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 100, 28, WingStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 100, 46, BallastStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 100, 64, WinchStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 100, 82, RudderStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 100, 100, TackerStateBuf, &Font16, COLORED);
+
+
+		Paint_DrawStringAt(&paint_black, 190, 62, voltageBuf, &Font24, COLORED);
 		EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
 		HAL_Delay(10000);
 
@@ -281,6 +372,18 @@ void SystemClock_Config(void)
 void HAL_SYSTICK_Callback(void)
 {
 	ticks++;
+}
+
+void waitForCANMsg(int CANID) {
+	bool msgRxd = false;
+	while (!msgRxd) {
+		if (HAL_CAN_Receive(&CanHandle, CAN_FIFO0, 500) == HAL_OK) {
+			if (CanHandle.pRxMsg->ExtId == CANID) {
+				msgRxd = true;
+			}
+		}
+	}
+
 }
 
 static void CAN_Config(void)
