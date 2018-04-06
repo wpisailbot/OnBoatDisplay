@@ -64,8 +64,8 @@
 typedef enum { false, true } bool;
 
 enum {
-	SailbotState = 65296,
-	SailbotConn = 65297,
+	SailbotState = 0x14ff1015,
+	SailbotConn = 0x14ff1115,
 	BatteryVoltage = 0x94ff2015
 };
 
@@ -95,7 +95,7 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
 static void CAN_Config(void);
-void waitForCANMsg(int msgID);
+void waitForCANMsg(int CANID);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -165,34 +165,28 @@ int main(void)
 	/* Draw something to the frame buffer */
 	/* For simplicity, the arguments are explicit numerical coordinates */
 	Paint_SetRotate(&paint_black, ROTATE_90);
+	Paint_SetRotate(&paint_red, ROTATE_90);
 
 	/*Write strings to the buffer */
-	Paint_DrawStringAt(&paint_black, 36, 30, "Boat booting", &Font24, COLORED);
-	Paint_DrawStringAt(&paint_black, 50, 64, "Please wait", &Font24, COLORED);
+	Paint_DrawStringAt(&paint_black, 120, 45, "Boat booting", &Font20, COLORED);
+	Paint_DrawStringAt(&paint_black, 120, 70, "Please wait", &Font20, COLORED);
 
 	/* Display the frame_buffer */
-	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+	EPD_DisplayFrame(&epd, frame_buffer_black, gImage_gompi);
 
 
 	waitForCANMsg(SailbotState);
 	//HAL_Delay(5000); // Will replace with wait for rx of specific CAN message or some other signal from BBB
 
 	Paint_Clear(&paint_black, UNCOLORED);
-	Paint_DrawStringAt(&paint_black, 40, 30, "Boat booted", &Font24, COLORED);
-	EPD_DisplayFrame(&epd, frame_buffer_black, gImage_gompi);
-
-	CanHandle.pTxMsg->StdId = 0x123;
-	CanHandle.pTxMsg->RTR = 0;
-	CanHandle.pTxMsg->DLC = 3;
-	CanHandle.pTxMsg->Data[0] = 0;
-	CanHandle.pTxMsg->Data[1] = 0;
-	CanHandle.pTxMsg->Data[2] = 0;
+	Paint_DrawStringAt(&paint_black, 56, 56, "Boat booted", &Font24, COLORED);
+	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
 
 	HAL_ADC_Start(&hadc2);
 
 	int ADCValue = 0;
 	long startTime = 0;
-	int interval = 10000; // time between screen updates in sections
+	int interval = 15000; // time between screen updates in sections
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -243,6 +237,7 @@ int main(void)
 
 			/* Construct the battery voltage method */
 			CanHandle.pTxMsg->ExtId = BatteryVoltage;
+			CanHandle.pTxMsg->IDE = CAN_ID_EXT;
 			CanHandle.pTxMsg->DLC = 2;
 			CanHandle.pTxMsg->Data[0] = ADCValue>>8;
 			CanHandle.pTxMsg->Data[1] = ADCValue;
@@ -262,14 +257,14 @@ int main(void)
 
 
 		/* Write states to the display */
-		char WingStateBuf[8];
-		sprintf(WingStateBuf, "Wing: %d",  SailbotStates.Wing);
+		char WingStateBuf[10];
+		sprintf(WingStateBuf, "Wing:   %d",  SailbotStates.Wing);
 
-		char BallastStateBuf[11];
-		sprintf(BallastStateBuf, "Ballast: %d",  SailbotStates.Ballast);
+		char BallastStateBuf[10];
+		sprintf(BallastStateBuf, "Ballast:%d",  SailbotStates.Ballast);
 
-		char WinchStateBuf[9];
-		sprintf(WinchStateBuf, "Winch: %d",  SailbotStates.Winch);
+		char WinchStateBuf[10];
+		sprintf(WinchStateBuf, "Winch:  %d",  SailbotStates.Winch);
 
 		char RudderStateBuf[10];
 		sprintf(RudderStateBuf, "Rudder: %d",  SailbotStates.Rudder);
@@ -277,45 +272,44 @@ int main(void)
 		char TackerStateBuf[10];
 		sprintf(TackerStateBuf, "Tacker: %d",  SailbotStates.Tacker);
 
-		char WingConnBuf[8];
-		sprintf(WingConnBuf, "Wing: %d",  ConnectionStates.Wing);
+		char WingConnBuf[9];
+		sprintf(WingConnBuf, "Wing:  %d",  ConnectionStates.Wing);
 
-		char RadioConnBuf[8];
+		char RadioConnBuf[9];
 		sprintf(RadioConnBuf, "Radio: %d",  ConnectionStates.Radio);
 
-		char WifiConnBuf[8];
-		sprintf(WifiConnBuf, "Wifi: %d",  ConnectionStates.Wifi);
+		char WifiConnBuf[9];
+		sprintf(WifiConnBuf, "Wifi:  %d",  ConnectionStates.Wifi);
 
-		char JetsonConnBuf[10];
-		sprintf(JetsonConnBuf, "Jetson: %d",  ConnectionStates.Jetson);
+		char JetsonConnBuf[9];
+		sprintf(JetsonConnBuf, "Jetson:%d",  ConnectionStates.Jetson);
 
-		char UIConnBuf[6];
-		sprintf(UIConnBuf, "UI: %d",  ConnectionStates.UI);
+		char UIConnBuf[9];
+		sprintf(UIConnBuf, "UI:    %d",  ConnectionStates.UI);
 
 
 		/* Write to the display */
 		Paint_Clear(&paint_black, UNCOLORED);
 
-		Paint_DrawStringAt(&paint_black, 10, 10, "Connections:", &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 10, 28, WingConnBuf, &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 10, 46, RadioConnBuf, &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 10, 64, WifiConnBuf, &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 10, 82, JetsonConnBuf, &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 10, 100, UIConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 15, "Connected:", &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 33, WingConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 51, RadioConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 69, WifiConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 87, JetsonConnBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 10, 105, UIConnBuf, &Font16, COLORED);
 
 
 
-		Paint_DrawStringAt(&paint_black, 100, 10, "Modes:", &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 100, 28, WingStateBuf, &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 100, 46, BallastStateBuf, &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 100, 64, WinchStateBuf, &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 100, 82, RudderStateBuf, &Font16, COLORED);
-		Paint_DrawStringAt(&paint_black, 100, 100, TackerStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 130, 15, "Modes:", &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 130, 33, WingStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 130, 51, BallastStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 130, 69, WinchStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 130, 87, RudderStateBuf, &Font16, COLORED);
+		Paint_DrawStringAt(&paint_black, 130, 105, TackerStateBuf, &Font16, COLORED);
 
 
-		Paint_DrawStringAt(&paint_black, 190, 62, voltageBuf, &Font24, COLORED);
+		Paint_DrawStringAt(&paint_black, 225, 5, voltageBuf, &Font24, COLORED);
 		EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
-		HAL_Delay(10000);
 
 		/* USER CODE END WHILE */
 
