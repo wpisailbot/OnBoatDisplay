@@ -100,7 +100,7 @@ void waitForCANMsg(int CANID);
 
 /* USER CODE BEGIN 0 */
 volatile unsigned long ticks;
-
+float voltage = 0;
 /* USER CODE END 0 */
 
 /**
@@ -164,8 +164,8 @@ int main(void)
 
 	/* Draw something to the frame buffer */
 	/* For simplicity, the arguments are explicit numerical coordinates */
-	Paint_SetRotate(&paint_black, ROTATE_90);
-	Paint_SetRotate(&paint_red, ROTATE_90);
+	Paint_SetRotate(&paint_black, ROTATE_270);
+	Paint_SetRotate(&paint_red, ROTATE_270);
 
 	/*Write strings to the buffer */
 	Paint_DrawStringAt(&paint_black, 120, 45, "Boat booting", &Font20, COLORED);
@@ -234,13 +234,17 @@ int main(void)
 		if (HAL_ADC_PollForConversion(&hadc2, 100) == HAL_OK)
 		{
 			ADCValue = HAL_ADC_GetValue(&hadc2);
+			// Scale from ADC to actual voltage range based on voltage divider
+			voltage = (float)ADCValue/4096.0*13.0;
 
 			/* Construct the battery voltage method */
 			CanHandle.pTxMsg->ExtId = BatteryVoltage;
 			CanHandle.pTxMsg->IDE = CAN_ID_EXT;
-			CanHandle.pTxMsg->DLC = 2;
-			CanHandle.pTxMsg->Data[0] = ADCValue>>8;
-			CanHandle.pTxMsg->Data[1] = ADCValue;
+			CanHandle.pTxMsg->DLC = 4;
+			CanHandle.pTxMsg->Data[0] = (int)(voltage*10)>>24;
+			CanHandle.pTxMsg->Data[1] = (int)(voltage*10)>>16;
+			CanHandle.pTxMsg->Data[2] = (int)(voltage*10)>>8;
+			CanHandle.pTxMsg->Data[3] = (int)(voltage*10);
 
 			/* Transmit the battery voltage message. Doesn't really matter if it fails, not super
 			 * critical and there's no real recovery behavior
@@ -248,9 +252,6 @@ int main(void)
 			HAL_CAN_Transmit(&CanHandle, 1000);
 
 		}
-
-		// Scale from ADC to actual voltage range based on voltage divider
-		float voltage = (float)ADCValue/4096.0*13.0;
 
 		char voltageBuf[6];
 		sprintf(voltageBuf, "%d.%dv",  (int)voltage, (int)(voltage*10)%10);
