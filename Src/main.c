@@ -96,6 +96,7 @@ void SystemClock_Config(void);
 /* Private function prototypes -----------------------------------------------*/
 static void CAN_Config(void);
 void waitForCANMsg(int CANID);
+void getFirstCANMsgs();
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -175,12 +176,10 @@ int main(void)
 	EPD_DisplayFrame(&epd, frame_buffer_black, gImage_gompi);
 
 
-	waitForCANMsg(SailbotState);
+	//waitForCANMsg(SailbotState);
 	//HAL_Delay(5000); // Will replace with wait for rx of specific CAN message or some other signal from BBB
 
-	Paint_Clear(&paint_black, UNCOLORED);
-	Paint_DrawStringAt(&paint_black, 56, 56, "Boat booted", &Font24, COLORED);
-	EPD_DisplayFrame(&epd, frame_buffer_black, frame_buffer_red);
+	getFirstCANMsgs();
 
 	HAL_ADC_Start(&hadc2);
 
@@ -234,17 +233,14 @@ int main(void)
 		if (HAL_ADC_PollForConversion(&hadc2, 100) == HAL_OK)
 		{
 			ADCValue = HAL_ADC_GetValue(&hadc2);
-			// Scale from ADC to actual voltage range based on voltage divider
-			voltage = (float)ADCValue/4096.0*13.0;
+			// Scale from ADC to actual voltage range based on voltage divider and empirically determined offset
+			voltage = (float)ADCValue/4096.0*13.0+0.6;
 
 			/* Construct the battery voltage method */
 			CanHandle.pTxMsg->ExtId = BatteryVoltage;
 			CanHandle.pTxMsg->IDE = CAN_ID_EXT;
-			CanHandle.pTxMsg->DLC = 4;
-			CanHandle.pTxMsg->Data[0] = (int)(voltage*10)>>24;
-			CanHandle.pTxMsg->Data[1] = (int)(voltage*10)>>16;
-			CanHandle.pTxMsg->Data[2] = (int)(voltage*10)>>8;
-			CanHandle.pTxMsg->Data[3] = (int)(voltage*10);
+			CanHandle.pTxMsg->DLC = 1;
+			CanHandle.pTxMsg->Data[0] = (int)(voltage*10)&0xFF;
 
 			/* Transmit the battery voltage message. Doesn't really matter if it fails, not super
 			 * critical and there's no real recovery behavior
@@ -392,7 +388,30 @@ void waitForCANMsg(int CANID) {
 			}
 		}
 	}
+}
 
+void getFirstCANMsgs() {
+	bool status = false;
+	bool connection = false;
+	while (!status && !connection) {
+		if (HAL_CAN_Receive(&CanHandle, CAN_FIFO0, 500) == HAL_OK) {
+			if (CanHandle.pRxMsg->ExtId == SailbotState) {
+				SailbotStates.Wing = CanHandle.pRxMsg->Data[0];
+				SailbotStates.Ballast = CanHandle.pRxMsg->Data[1];
+				SailbotStates.Winch = CanHandle.pRxMsg->Data[2];
+				SailbotStates.Rudder = CanHandle.pRxMsg->Data[3];
+				SailbotStates.Tacker = CanHandle.pRxMsg->Data[4];
+				status = true;
+			} else if (CanHandle.pRxMsg->ExtId == SailbotConn) {
+				ConnectionStates.Wing = CanHandle.pRxMsg->Data[0];
+				ConnectionStates.Radio = CanHandle.pRxMsg->Data[1];
+				ConnectionStates.Wifi = CanHandle.pRxMsg->Data[2];
+				ConnectionStates.Jetson = CanHandle.pRxMsg->Data[3];
+				ConnectionStates.UI = CanHandle.pRxMsg->Data[4];
+				connection = true;
+			}
+		}
+	}
 }
 
 static void CAN_Config(void)
