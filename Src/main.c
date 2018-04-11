@@ -69,21 +69,21 @@ enum {
 	BatteryVoltage = 0x94ff2015
 };
 
-struct {
+typedef struct {
 	unsigned char Wing;
 	unsigned char Ballast;
 	unsigned char Winch;
 	unsigned char Rudder;
 	unsigned char Tacker;
-} SailbotStates;
+} SailbotStates_t;
 
-struct {
+typedef struct {
 	unsigned char Wing;
 	unsigned char Radio;
 	unsigned char Wifi;
 	unsigned char Jetson;
 	unsigned char UI;
-} ConnectionStates;
+} SailbotConnections_t;
 
 uint8_t ubKeyNumber = 0x0;
 CAN_HandleTypeDef    CanHandle;
@@ -97,11 +97,21 @@ void SystemClock_Config(void);
 static void CAN_Config(void);
 void waitForCANMsg(int CANID);
 void getFirstCANMsgs();
+bool compareConnections(SailbotConnections_t conn1, SailbotConnections_t conn2);
+bool compareStates(SailbotStates_t states1, SailbotStates_t states2);
+
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
 volatile unsigned long ticks;
 float voltage = 0;
+
+SailbotStates_t SailbotStates;
+SailbotConnections_t SailbotConnections;
+
+SailbotStates_t SailbotStates_tmp;
+SailbotConnections_t SailbotConnections_tmp;
+
 /* USER CODE END 0 */
 
 /**
@@ -172,7 +182,7 @@ int main(void)
 	Paint_DrawStringAt(&paint_black, 120, 45, "Boat booting", &Font20, COLORED);
 	Paint_DrawStringAt(&paint_black, 120, 70, "Please wait", &Font20, COLORED);
 
-	/* Display the frame_buffer */
+	/* Display the text, plus Gompi in red */
 	EPD_DisplayFrame(&epd, frame_buffer_black, gImage_gompi);
 
 
@@ -180,8 +190,6 @@ int main(void)
 	//HAL_Delay(5000); // Will replace with wait for rx of specific CAN message or some other signal from BBB
 
 	getFirstCANMsgs();
-
-	HAL_ADC_Start(&hadc2);
 
 	int ADCValue = 0;
 	long startTime = 0;
@@ -197,30 +205,32 @@ int main(void)
 
 		/**
 		 *
-		 * While waiting to update display, continually read messages from the CAN bus.
-		 * If they are either of the two we care about, save the data from them for later display.
+		 * Continually read messages from the CAN bus.
+		 * If the received message is either of the two we care about, save the data from them for later display.
 		 * This way the latest data is always available when the display updates.
-		 * Maybe not the most efficient approach, but it works.
+		 * If the status or connection message changes, then update the display as well
 		 *
 		 */
-		while (ticks < (startTime + interval)) {
+		while (ticks < (startTime + interval) && compareConnections(SailbotConnections, SailbotConnections_tmp) && compareStates(SailbotStates, SailbotStates_tmp)) {
 			if (HAL_CAN_Receive(&CanHandle, CAN_FIFO0, 500) == HAL_OK) {
 				if (CanHandle.pRxMsg->ExtId == SailbotState) {
-					SailbotStates.Wing = CanHandle.pRxMsg->Data[0];
-					SailbotStates.Ballast = CanHandle.pRxMsg->Data[1];
-					SailbotStates.Winch = CanHandle.pRxMsg->Data[2];
-					SailbotStates.Rudder = CanHandle.pRxMsg->Data[3];
-					SailbotStates.Tacker = CanHandle.pRxMsg->Data[4];
+					SailbotStates_tmp.Wing = CanHandle.pRxMsg->Data[0];
+					SailbotStates_tmp.Ballast = CanHandle.pRxMsg->Data[1];
+					SailbotStates_tmp.Winch = CanHandle.pRxMsg->Data[2];
+					SailbotStates_tmp.Rudder = CanHandle.pRxMsg->Data[3];
+					SailbotStates_tmp.Tacker = CanHandle.pRxMsg->Data[4];
 				} else if (CanHandle.pRxMsg->ExtId == SailbotConn) {
-					ConnectionStates.Wing = CanHandle.pRxMsg->Data[0];
-					ConnectionStates.Radio = CanHandle.pRxMsg->Data[1];
-					ConnectionStates.Wifi = CanHandle.pRxMsg->Data[2];
-					ConnectionStates.Jetson = CanHandle.pRxMsg->Data[3];
-					ConnectionStates.UI = CanHandle.pRxMsg->Data[4];
+					SailbotConnections_tmp.Wing = CanHandle.pRxMsg->Data[0];
+					SailbotConnections_tmp.Radio = CanHandle.pRxMsg->Data[1];
+					SailbotConnections_tmp.Wifi = CanHandle.pRxMsg->Data[2];
+					SailbotConnections_tmp.Jetson = CanHandle.pRxMsg->Data[3];
+					SailbotConnections_tmp.UI = CanHandle.pRxMsg->Data[4];
 				}
 			}
 		}
-		/* Receive CAN messages */
+		// save the most recent values
+		SailbotStates = SailbotStates_tmp;
+		SailbotConnections = SailbotConnections_tmp;
 
 		/*
 		 * Read ADC to read battery voltage, scale, and write to display buffer
@@ -233,6 +243,7 @@ int main(void)
 		if (HAL_ADC_PollForConversion(&hadc2, 100) == HAL_OK)
 		{
 			ADCValue = HAL_ADC_GetValue(&hadc2);
+
 			// Scale from ADC to actual voltage range based on voltage divider and empirically determined offset
 			voltage = (float)ADCValue/4096.0*13.0+0.6;
 
@@ -270,19 +281,19 @@ int main(void)
 		sprintf(TackerStateBuf, "Tacker: %d",  SailbotStates.Tacker);
 
 		char WingConnBuf[9];
-		sprintf(WingConnBuf, "Wing:  %d",  ConnectionStates.Wing);
+		sprintf(WingConnBuf, "Wing:  %d",  SailbotConnections.Wing);
 
 		char RadioConnBuf[9];
-		sprintf(RadioConnBuf, "Radio: %d",  ConnectionStates.Radio);
+		sprintf(RadioConnBuf, "Radio: %d",  SailbotConnections.Radio);
 
 		char WifiConnBuf[9];
-		sprintf(WifiConnBuf, "Wifi:  %d",  ConnectionStates.Wifi);
+		sprintf(WifiConnBuf, "Wifi:  %d",  SailbotConnections.Wifi);
 
 		char JetsonConnBuf[9];
-		sprintf(JetsonConnBuf, "Jetson:%d",  ConnectionStates.Jetson);
+		sprintf(JetsonConnBuf, "Jetson:%d",  SailbotConnections.Jetson);
 
 		char UIConnBuf[9];
-		sprintf(UIConnBuf, "UI:    %d",  ConnectionStates.UI);
+		sprintf(UIConnBuf, "UI:    %d",  SailbotConnections.UI);
 
 
 		/* Write to the display */
@@ -390,6 +401,14 @@ void waitForCANMsg(int CANID) {
 	}
 }
 
+bool compareStates(SailbotStates_t states1, SailbotStates_t states2) {
+	return (states1.Ballast == states2.Ballast) && (states1.Rudder == states2.Rudder) && (states1.Tacker == states2.Tacker) && (states1.Winch == states2.Winch) && (states1.Wing == states2.Wing);
+}
+
+bool compareConnections(SailbotConnections_t conn1, SailbotConnections_t conn2) {
+	return (conn1.Jetson == conn2.Jetson) && (conn1.Radio == conn2.Radio) && (conn1.UI == conn2.UI) && (conn1.Wifi == conn2.Wifi) && (conn1.Wing == conn2.Wing);
+}
+
 void getFirstCANMsgs() {
 	bool status = false;
 	bool connection = false;
@@ -403,11 +422,11 @@ void getFirstCANMsgs() {
 				SailbotStates.Tacker = CanHandle.pRxMsg->Data[4];
 				status = true;
 			} else if (CanHandle.pRxMsg->ExtId == SailbotConn) {
-				ConnectionStates.Wing = CanHandle.pRxMsg->Data[0];
-				ConnectionStates.Radio = CanHandle.pRxMsg->Data[1];
-				ConnectionStates.Wifi = CanHandle.pRxMsg->Data[2];
-				ConnectionStates.Jetson = CanHandle.pRxMsg->Data[3];
-				ConnectionStates.UI = CanHandle.pRxMsg->Data[4];
+				SailbotConnections.Wing = CanHandle.pRxMsg->Data[0];
+				SailbotConnections.Radio = CanHandle.pRxMsg->Data[1];
+				SailbotConnections.Wifi = CanHandle.pRxMsg->Data[2];
+				SailbotConnections.Jetson = CanHandle.pRxMsg->Data[3];
+				SailbotConnections.UI = CanHandle.pRxMsg->Data[4];
 				connection = true;
 			}
 		}
