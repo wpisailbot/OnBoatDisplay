@@ -106,6 +106,21 @@ bool compareStates(SailbotStates_t states1, SailbotStates_t states2);
 volatile unsigned long ticks;
 float voltage = 0;
 
+char* modes[5] = {"MANL", "AUTO", "WIFI", "DSBL", "FLTR"};
+char* conn[3] = {"OK", "--", "NA"};
+
+char* connectionStr(int status) {
+	if (status != 255) {
+		return conn[status];
+	} else {
+		return conn[2];
+	}
+}
+
+char* modeStr(int status) {
+	return modes[status];
+}
+
 SailbotStates_t SailbotStates;
 SailbotConnections_t SailbotConnections;
 
@@ -265,35 +280,35 @@ int main(void)
 
 
 		/* Write states to the display */
-		char WingStateBuf[10];
-		sprintf(WingStateBuf, "Wing:   %d",  SailbotStates.Wing);
+		char WingStateBuf[13];
+		sprintf(WingStateBuf, "Wing:   %s",  modeStr(SailbotStates.Wing));
 
-		char BallastStateBuf[10];
-		sprintf(BallastStateBuf, "Ballast:%d",  SailbotStates.Ballast);
+		char BallastStateBuf[13];
+		sprintf(BallastStateBuf, "Ballast:%s",  modeStr(SailbotStates.Ballast));
 
-		char WinchStateBuf[10];
-		sprintf(WinchStateBuf, "Winch:  %d",  SailbotStates.Winch);
+		char WinchStateBuf[13];
+		sprintf(WinchStateBuf, "Winch:  %s",  modeStr(SailbotStates.Winch));
 
-		char RudderStateBuf[10];
-		sprintf(RudderStateBuf, "Rudder: %d",  SailbotStates.Rudder);
+		char RudderStateBuf[13];
+		sprintf(RudderStateBuf, "Rudder: %s",  modeStr(SailbotStates.Rudder));
 
 		char TackerStateBuf[10];
 		sprintf(TackerStateBuf, "Tacker: %d",  SailbotStates.Tacker);
 
-		char WingConnBuf[9];
-		sprintf(WingConnBuf, "Wing:  %d",  SailbotConnections.Wing);
+		char WingConnBuf[12];
+		sprintf(WingConnBuf, "Wing:  %s",  connectionStr(SailbotConnections.Wing));
 
-		char RadioConnBuf[9];
-		sprintf(RadioConnBuf, "Radio: %d",  SailbotConnections.Radio);
+		char RadioConnBuf[12];
+		sprintf(RadioConnBuf, "Radio: %s",  connectionStr(SailbotConnections.Radio));
 
-		char WifiConnBuf[9];
-		sprintf(WifiConnBuf, "Wifi:  %d",  SailbotConnections.Wifi);
+		char WifiConnBuf[12];
+		sprintf(WifiConnBuf, "Wifi:  %s",  connectionStr(SailbotConnections.Wifi));
 
-		char JetsonConnBuf[9];
-		sprintf(JetsonConnBuf, "Jetson:%d",  SailbotConnections.Jetson);
+		char JetsonConnBuf[12];
+		sprintf(JetsonConnBuf, "Jetson:%s",  connectionStr(SailbotConnections.Jetson));
 
-		char UIConnBuf[9];
-		sprintf(UIConnBuf, "UI:    %d",  SailbotConnections.UI);
+		char UIConnBuf[12];
+		sprintf(UIConnBuf, "UI:    %s",  connectionStr(SailbotConnections.UI));
 
 
 		/* Write to the display */
